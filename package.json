@@ -1,6 +1,6 @@
 {
   "name": "connect-consul",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "description": "Consul session store for Connect",
   "main": "index.js",
   "directories": {
