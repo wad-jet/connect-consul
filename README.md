@@ -39,11 +39,11 @@ Options
 * _opts.sessionsFolder_ - root folder name for session keys in KV Store ('_sessions_' by default)
 * _opts.application_ - the application name used in sub-folder name, for instance 'connect.sid' and in lock session name as prefix, for instance 'connect.sid:HTQQG3RS6OCdjyU...' ('_connect_' by default)
 
-![root folder and sub-folder names](sessions.png)
+![root folder and sub-folder names](doc/images/sessions.png)
 
-![the session data in kv store](session-kv.png)
+![the session data in kv store](doc/images/session-kv.png)
 
-![lock session](lock-session.png)
+![lock session](doc/images/lock-session.png)
 
 * _opts.serializer_ - serializer for session store data (JSON by default)
 * _opts.socket_ - null or [Consul](https://www.npmjs.com/package/consul) client instance value. If it has null value, will be created a new Consul client wich is used opts as parameter.

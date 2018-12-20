@@ -1,0 +1,11 @@
+.git/
+.vscode/
+# for npm
+node_modules/
+# codes
+test/
+# misc
+example/
+
+.gitignore
+npm-debug.log
