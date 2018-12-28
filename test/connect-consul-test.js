@@ -11,12 +11,20 @@ var expect = chai.expect;    // Using Expect style
 var should = chai.should();  // Using Should style
 var foo = { foo: 'bar' };
 
-var mock =  new ConsulMock();
-var mockOpts = {
+var _CreateMockSessionStore = function(opts) {
+    opts = opts || { debug: true };
+    if (util.isNullOrUndefined(opts.socket)) {
+        opts.socket = new ConsulMock();
+    }
+    const result = new ConsulSessionStore(opts);
+    return result;
+}
+
+var consulMock = new ConsulMock();
+var sessionStore = _CreateMockSessionStore({
     debug: true,
-    socket: mock,
-};
-var sessionStore = new ConsulSessionStore(mockOpts);
+    socket: consulMock,
+});
 
 describe('The module interface declaration test', function() {
 
@@ -143,16 +151,12 @@ describe('Properties execution tests for the SessionStore object.', function() {
         });
 
         it('(serializer test) get by key ' + ConsulMock.KeyExists + ', deserialize of value succesful.', async function() {
-            //TODO: DRY
-            const mock = new ConsulMock();
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = false;
-            const _mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
-                socket: mock,
                 serializer: mockSerializer,
-            };            
-            var _sessionStore = new ConsulSessionStore(_mockOpts);
+            });
 
             var asyncResult = await getAsync(ConsulMock.KeyExists, _sessionStore);
             expect(asyncResult.err).to.be.null;
@@ -164,16 +168,12 @@ describe('Properties execution tests for the SessionStore object.', function() {
         }); 
 
         it('(serializer test) get by key ' + ConsulMock.KeyExists + ', deserialize of value causes an error.', async function() {
-            //TODO: DRY
-            const mock = new ConsulMock();
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = true;
-            const _mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
-                socket: mock,
                 serializer: mockSerializer,
-            };            
-            var _sessionStore = new ConsulSessionStore(_mockOpts);
+            });
 
             (await exceptAsync(getAsync(ConsulMock.KeyExists, _sessionStore))).equal(SerializerMock.TestErrorMessage);    
         }); 
@@ -209,34 +209,26 @@ describe('Properties execution tests for the SessionStore object.', function() {
         });
 
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value succesful.', async function() {
-            //TODO: DRY
-            const mock = new ConsulMock();
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = false;
             mockSerializer.serFailure = false;
-            const _mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
-                socket: mock,
                 serializer: mockSerializer,
-            };            
-            var _sessionStore = new ConsulSessionStore(_mockOpts);
+            });
 
             var asyncResult = await setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore);            
             expect(asyncResult.err).to.be.null;
         }); 
 
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value causes an error.', async function() {
-            //TODO: DRY
-            const mock = new ConsulMock();
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = false;
             mockSerializer.serFailure = true;
-            const _mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
-                socket: mock,
                 serializer: mockSerializer,
-            };            
-            var _sessionStore = new ConsulSessionStore(_mockOpts);
+            });
 
             (await exceptAsync(setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore))).equal(SerializerMock.TestErrorMessage);    
         }); 
@@ -244,8 +236,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
 
     describe('SET TTL', function() {
         it('set new key ' + ConsulMock.KeyNotExists + ' with cookie.maxAge value, this operation should be successful', async function() {
-            var mockKVRes = mock.kv.res;
-            var mockSessRes = mock.session.res;
+            var mockKVRes = consulMock.kv.res;
+            var mockSessRes = consulMock.session.res;
 
             var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }
             sess.cookie.maxAge = 600000;
@@ -262,14 +254,12 @@ describe('Properties execution tests for the SessionStore object.', function() {
         });
         
         it('set new key ' + ConsulMock.KeyNotExists + ' with cookie.maxAge value (set "release" behavior), this operation should be successful', async function() {
-            //TODO: DRY
             const mock = new ConsulMock();
-            const mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
                 socket: mock,
                 sessionBehavior: "release",
-            };
-            var ss = new ConsulSessionStore(mockOpts);
+            });
 
             var mockKVRes = mock.kv.res;
             var mockSessRes = mock.session.res;
@@ -277,7 +267,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }            
             sess.cookie.maxAge = 600000;
 
-            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, ss);            
+            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, _sessionStore);            
             expect(asyncResult.err).to.be.null;
             var mockResKV = JSON.parse(mockKVRes[ConsulMock.KeyNotExists]);
             expect(mockResKV).to.not.be.null.and.not.be.undefined;
@@ -289,20 +279,20 @@ describe('Properties execution tests for the SessionStore object.', function() {
         });   
         
         it('set new key ' + ConsulMock.KeyNotExists + ', separator option changed to ":"', async function() {
-            //TODO: DRY
+            
             const mock = new ConsulMock({ separator: ':' });
-            const mockOpts = {
+            var _sessionStore = _CreateMockSessionStore({
                 debug: true,
                 socket: mock,
                 separator: ':',
-            };
-            var ss = new ConsulSessionStore(mockOpts);
+            });
+
             var mockKVRes = mock.kv.res;
             var mockSessRes = mock.session.res;
 
             var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }
 
-            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, ss);            
+            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, _sessionStore);            
             expect(asyncResult.err).to.be.null;
             var mockResKV = JSON.parse(mockKVRes[ConsulMock.KeyNotExists]);
             expect(mockResKV).to.not.be.null.and.not.be.undefined;
