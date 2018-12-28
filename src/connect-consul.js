@@ -299,7 +299,7 @@ module.exports = function (session) {
             self._consul.session.renew(lockSessionID, function(err, renew) {
                 if (lockSessionID !== renew[0].ID) {
                     //TODO: TEST
-                    throw new Error('Resulted renew[0].ID (' + renew[0].ID + ') and lockSessionID (' + lockSessionID + ') are not equal.');
+                    throw Error('Resulted renew[0].ID (' + renew[0].ID + ') and lockSessionID (' + lockSessionID + ') are not equal.');
                 }
                 //TODO: TEST
                 if (!err) self.debug(`[V] Session ${sessionKey} touched, lockSessionID: ${renew[0].ID}.`);
