@@ -53,6 +53,45 @@ module.exports = function (session) {
         return result;
     };
 
+    const __get = function(sessionKey, cb, self) { 
+        self.debug(`[.] Get session ${sessionKey} value.`);
+        self._consul.kv.get(sessionKey, function(err, item) {
+            if (!util.isNullOrUndefined(err)) return cb(err);
+            if (util.isNullOrUndefined(item)) {
+                self.debug(`[V] The session ${sessionKey} not exists.`);
+                return cb();
+            }
+            try {
+                var sessionResult = self._serializer.parse(item.Value);
+            }
+            catch (e) {                
+                return cb(e);
+            }              
+            self.debug(`[V] The session ${sessionKey} exists (lockSessionID: ${item.Session}).`);
+            return cb(null, sessionResult, item.Session);
+        });
+    }
+
+    const __set = function(lockSessionID, sessionKey, data, cb, self) {
+        self.debug(`[.] Set session ${sessionKey} value (lockSessionID: ${lockSessionID}).`);
+        try {
+            var sessionValue = self._serializer.stringify(data);
+        }
+        catch (e) {
+            return cb(e);
+        }                  
+        self._consul.kv.set(sessionKey, sessionValue, { acquire: lockSessionID }, 
+            function(err, success) {
+                if (!util.isNullOrUndefined(err)) {
+                    return cb(err);
+                }
+                if (!success) { self.warn('The \'set\' operation for the session to Consul k/v failed.'); }
+                self.debug(`[V] Set session ${sessionKey} is completed (lockSessionID: ${lockSessionID}).`);
+                cb(null);
+            }
+        );
+    }
+
     /**
      * Options to ConsulSessionStore     
      * @param {Object} opts 
@@ -121,25 +160,8 @@ module.exports = function (session) {
      */
     ConsulSessionStore.prototype.get = function (id, cb) {
         const self = this;
-        const sessionKey = _getSessionKey(id, self); cb = cb || _nil;
-
-        self.debug(`Get session ${sessionKey} value.`);
-        const optsKV = { key: sessionKey };
-        if (self._separator !== '/') {
-            optsKV.separator = self._separator;
-        }
-        self._consul.kv.get(optsKV, function(err, item) {
-            if (!util.isNullOrUndefined(err)) return cb(err);
-            if (util.isNullOrUndefined(item)) return cb();
-            try {
-                var sessionResult = self._serializer.parse(item.Value);
-            }
-            catch (e) {
-                return cb(e);
-            }              
-            self.debug(`The session ${sessionKey} has value.`);
-            return cb(null, sessionResult, item.Session);
-        });
+        const sessionKey = _getSessionKey(id, self); cb = cb || _nil;        
+        return __get(sessionKey, cb, self);        
     }
 
     /**
@@ -155,43 +177,25 @@ module.exports = function (session) {
 
         const self = this;
         cb = cb || _nil;
-        this.get(id, function(err, prevData, lockSessionID) {
+        const sessionKey = _getSessionKey(id, self);
+        __get(sessionKey, function(err, prevData, lockSessionID) {
             if (!util.isNullOrUndefined(err)) {
                 return cb(err);
             }
-            const sessionKey = _getSessionKey(id, self); 
-
-            var __set = function(lockSessionID, _data, cb) {                
-                try {
-                    var sessionValue = self._serializer.stringify(_data);
-                }
-                catch (e) {
-                    return cb(e);
-                }                  
-                self._consul.kv.set(sessionKey, sessionValue, { acquire: lockSessionID }, 
-                    function(err, success) {
-                        if (!util.isNullOrUndefined(err)) {
-                            return cb(err);
-                        }
-                        if (!success) { self.warn('The \'set\' operation for the session to Consul k/v failed.'); }
-                        cb(null);
-                    }
-                );
-            }
+            const sessionKey = _getSessionKey(id, self);             
 
             if (!util.isNullOrUndefined(prevData)) {     
                 if (util.isNullOrUndefined(lockSessionID)) {
                     throw new Error('The session data not have a lock session ID');
                 }
-
-                self.debug(`Update session ${sessionKey}, lockSessionID: ${lockSessionID}.`);    
-                __set(lockSessionID, data, function(err) {
-                    if (!err) self.debug(`Session ${sessionKey} updated, lockSessionID: ${lockSessionID}.`);
+                self.debug(`[.] Update session ${sessionKey}, lockSessionID: ${lockSessionID}.`);    
+                __set(lockSessionID, sessionKey, data, function(err) {
+                    if (!err) self.debug(`[V] Session ${sessionKey} updated, lockSessionID: ${lockSessionID}.`);
                     cb(err);
-                });
+                }, self);
             } else {
                 const ttl = _getTTL(self, data, id);
-                self.debug(`Create new session ${sessionKey}.`);
+                self.debug(`[.] Create new session ${sessionKey}.`);
                 self._consul.session.create({
                     name: _getLockSessionName(id, self),
                     ttl: !util.isNullOrUndefined(ttl) ? (ttl + 's') : null,
@@ -199,13 +203,13 @@ module.exports = function (session) {
                 }, function(err, result) {
                     if (!util.isNullOrUndefined(err)) return cb(err);
                     const lockSessionID = result.ID;
-                    __set(lockSessionID, data, function(err) {
-                        if (!err) self.debug(`New session ${sessionKey} created, lockSessionID: ${lockSessionID}.`);
+                    __set(lockSessionID, sessionKey, data, function(err) {
+                        if (!err) self.debug(`[V] New session ${sessionKey} successfully created, lockSessionID: ${lockSessionID}.`);
                         cb(err);
-                    });                    
+                    }, self);                    
                 });
             }
-        });
+        }, self);
     }
 
     /**
@@ -219,17 +223,23 @@ module.exports = function (session) {
         const self = this;
         const sessionKey = _getSessionKey(id, self); cb = cb || _nil;
 
-        self.debug(`Destroy session ${sessionKey}.`);
-        this.get(id, function(err, sessionData, lockSessionID) {
+        self.debug(`[.] Destroy session ${sessionKey}.`);
+        __get(sessionKey, function(err, sessionData, lockSessionID) {        
             if (!util.isNullOrUndefined(err)) {
                 return cb(err);
             }
-            if (!util.isNullOrUndefined(sessionData)) {
-                self._consul.session.destroy(lockSessionID, function(err) {
-                    if (!err) self.debug(`Session ${sessionKey} destroyed, lockSessionID: ${lockSessionID}.`);
-                    cb(err);
-                });            
+            if (util.isNullOrUndefined(sessionData)) {
+                debug(`[X] Session id ${id} not exists.`);
+                return cb();
             }
+            if (util.isNullOrUndefined(lockSessionID)) {
+                warn(`[X] Missing lockSessionID value for session id ${id}.`)
+                return cb();
+            }
+            self._consul.session.destroy(lockSessionID, function(err) {
+                if (!err) self.debug(`[V] Session ${sessionKey} destroyed, lockSessionID: ${lockSessionID}.`);
+                cb(err);
+            });            
         }, true);
     }
 
@@ -246,24 +256,29 @@ module.exports = function (session) {
 
         const self = this;
         const sessionKey = _getSessionKey(id, self); cb = cb || _nil;
-        self.debug(`Touch session ${sessionKey}.`);
+        self.debug(`[.] Touch session ${sessionKey}.`);
         if (!util.isNullOrUndefined(data) && data.cookie.maxAge === null) {
-            self.debug(`Refresh the time-to-live for the session ${sessionKey} is ignored becouse cookie.maxAge not set and the session does not expire.`);
+            self.debug(`[X] Refresh the time-to-live for the session ${sessionKey} is ignored becouse cookie.maxAge not set and the session does not expire.`);
             return cb();
         }        
-        this.get(id, function(err, sessionData, lockSessionID) {
+        __get(sessionKey, function(err, sessionData, lockSessionID) {        
             if (!util.isNullOrUndefined(err)) {
                 return cb(err);
             }
-            if (!util.isNullOrUndefined(sessionData)) {
-                self._consul.session.renew(lockSessionID, function(err, renew) {
-                    if (lockSessionID !== renew[0].ID) {
-                        throw new Error('The renew[0].ID (' + renew[0].ID + ') and lockSessionID (' + lockSessionID + ') are not equal.');
-                    }
-                    if (!err) self.debug(`Session ${sessionKey} touched, lockSessionID: ${renew[0].ID}.`);
-                    cb(err);
-                });            
+            if (util.isNullOrUndefined(sessionData)) {
+                return cb();
             }
+            if (util.isNullOrUndefined(lockSessionID)) {
+                warn(`[X] Missing lockSessionID value for session id ${id}.`)
+                return cb();
+            }            
+            self._consul.session.renew(lockSessionID, function(err, renew) {
+                if (lockSessionID !== renew[0].ID) {
+                    throw new Error('Resulted renew[0].ID (' + renew[0].ID + ') and lockSessionID (' + lockSessionID + ') are not equal.');
+                }
+                if (!err) self.debug(`[V] Session ${sessionKey} touched, lockSessionID: ${renew[0].ID}.`);
+                cb(err);
+            });                    
         }, true);
     }
 
