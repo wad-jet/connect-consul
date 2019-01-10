@@ -34,10 +34,7 @@ module.exports = function (session) {
     }
 
     const _getTTL = function(sess) {
-        //TODO: TEST ...
-        _throwIfSessDataNotValid(sess);
         const maxAge = sess.cookie.maxAge;
-        //TODO: TEST ...
         return (typeof maxAge === 'number'
             ? Math.floor(maxAge / 1000)
             : null);

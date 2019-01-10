@@ -207,7 +207,33 @@ describe('Properties execution tests for the SessionStore object.', function() {
         it('set key ' + ConsulMock.KeyCritical + ', this operation causes an critical error, because data.cookie is undefined.', async function() {
             (await exceptAsync(setAsync(ConsulMock.KeyCritical, { } )));                        
         });
+        it('set new key ' + ConsulMock.KeyNotExists + ', separator option changed to ":"', async function() {
+            
+            const mock = new ConsulMock({ separator: ':' });
+            var _sessionStore = _CreateMockSessionStore({
+                debug: true,
+                socket: mock,
+                separator: ':',
+            });
 
+            var mockKVRes = mock.kv.res;
+            var mockSessRes = mock.session.res;
+
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }
+
+            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, _sessionStore);            
+            expect(asyncResult.err).to.be.null;
+            var mockResKV = JSON.parse(mockKVRes[ConsulMock.KeyNotExists]);
+            expect(mockResKV).to.not.be.null.and.not.be.undefined;
+            expect(mockResKV.cookie.maxAge).equal(sess.cookie.maxAge);
+
+            const sessName = `connect.sid:${ConsulMock.KeyNotExists}`;
+            var mockResSess = mockSessRes[sessName];
+
+            expect(mockResSess.name).equal(sessName);
+            expect(mockResSess.ttl).to.be.null;
+            expect(mockResSess.behavior).equal("delete");
+        });
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value succesful.', async function() {
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = false;
@@ -219,8 +245,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
 
             var asyncResult = await setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore);            
             expect(asyncResult.err).to.be.null;
-        }); 
-
+        });
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value causes an error.', async function() {
             const mockSerializer = new SerializerMock();
             mockSerializer.deserFailure = false;
@@ -251,8 +276,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).equal(sess.cookie.maxAge / 1000 + 's');
             expect(mockResSess.behavior).equal("delete");
-        });
-        
+        });        
         it('set new key ' + ConsulMock.KeyNotExists + ' with cookie.maxAge value (set "release" behavior), this operation should be successful', async function() {
             const mock = new ConsulMock();
             var _sessionStore = _CreateMockSessionStore({
@@ -276,38 +300,43 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).equal(sess.cookie.maxAge / 1000 + 's');
             expect(mockResSess.behavior).equal("release");
-        });   
-        
-        it('set new key ' + ConsulMock.KeyNotExists + ', separator option changed to ":"', async function() {
-            
-            const mock = new ConsulMock({ separator: ':' });
-            var _sessionStore = _CreateMockSessionStore({
-                debug: true,
-                socket: mock,
-                separator: ':',
-            });
-
-            var mockKVRes = mock.kv.res;
-            var mockSessRes = mock.session.res;
+        });
+        it('set new key ' + ConsulMock.KeyNotExists + ', cookie.maxAge has null value.', async function() {
+            var mockKVRes = consulMock.kv.res;
+            var mockSessRes = consulMock.session.res;
 
             var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }
+            sess.cookie.maxAge = null;
 
-            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess, _sessionStore);            
+            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess);            
             expect(asyncResult.err).to.be.null;
             var mockResKV = JSON.parse(mockKVRes[ConsulMock.KeyNotExists]);
             expect(mockResKV).to.not.be.null.and.not.be.undefined;
             expect(mockResKV.cookie.maxAge).equal(sess.cookie.maxAge);
 
-            const sessName = `connect.sid:${ConsulMock.KeyNotExists}`;
-            var mockResSess = mockSessRes[sessName];
-
-            expect(mockResSess.name).equal(sessName);
+            var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).to.be.null;
             expect(mockResSess.behavior).equal("delete");
-        });  
-    });
+        });
+        it('set new key ' + ConsulMock.KeyNotExists + ', cookie.maxAge has undefined value.', async function() {
+            var mockKVRes = consulMock.kv.res;
+            var mockSessRes = consulMock.session.res;
 
-    /*
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) }
+            sess.cookie.maxAge = undefined;
+
+            var asyncResult = await setAsync(ConsulMock.KeyNotExists, sess);            
+            expect(asyncResult.err).to.be.null;
+            var mockResKV = JSON.parse(mockKVRes[ConsulMock.KeyNotExists]);
+            expect(mockResKV).to.not.be.null.and.not.be.undefined;
+            expect(mockResKV.cookie.maxAge).equal(sess.cookie.maxAge);
+
+            var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
+            expect(mockResSess.ttl).to.be.null;
+            expect(mockResSess.behavior).equal("delete");
+        });
+    });
+    
     describe('DESTROY', function() {
         it('without connection to consul', async function() {
             var asyncResult = await destroyAsync(key);
@@ -318,6 +347,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
             // TODO: ...
         });
     });
+
+    /*
     describe('TOUCH', function() {
         it('without connection to consul', async function() {
             var asyncResult = await touchAsync(key, Consul.SessAsDefault);
