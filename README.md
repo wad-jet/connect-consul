@@ -29,7 +29,13 @@ var opts = { };
 app.use(session({
     store: new ConsulSessionStore(opts),
     secret: 'keyboard cat',
-    resave: false
+    resave: false,
+    cookie: {
+        maxAge: 3600 * 1000, // 1h
+        secure: "auto",
+        path: '/',
+        httpOnly: true,
+    }
 }));
 ```
 

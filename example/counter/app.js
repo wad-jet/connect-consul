@@ -6,14 +6,20 @@ const port = 3000;
 var session = require('express-session');
 var ConsulSessionStore = require('../../src/connect-consul')(session);
  
-var opts = { };
+var opts = { debug: true };
 
 app.use(bodyParser.json());
 
 app.use(session({
     store: new ConsulSessionStore(opts),
     secret: 'keyboard cat',
-    resave: false
+    resave: false,
+    cookie: {
+        maxAge: 3600 * 1000, // 1h
+        secure: "auto",
+        path: '/',
+        httpOnly: true,
+    }
 }));
 
 var responseCounterValue = function(req, res) {
@@ -23,7 +29,10 @@ var responseCounterValue = function(req, res) {
 }
 
 app.get('/', function(req, res, next) {
-    req.session.counter = 0; next();
+    if (req.session.counter === undefined) {
+        req.session.counter = 0; 
+    }
+    next();
 }, responseCounterValue);
 
 app.get('/inc', function(req, res, next) {
