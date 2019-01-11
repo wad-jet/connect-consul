@@ -11,8 +11,40 @@ var expect = chai.expect;    // Using Expect style
 var should = chai.should();  // Using Should style
 var foo = { foo: 'bar' };
 
+const logItems = [];
+var loggerForTest = {
+    debug: function(...args) {        
+        logItems.push(args[0]);
+    },
+    info: function(...args) {
+        logItems.push(args[0]);
+    },
+    warn: function(...args) {
+        logItems.push(args[0]);
+    },
+    error: function(...args) {
+        logItems.push(args[0]);
+    },
+    trace: function(...args) {
+        logItems.push(args[0]);
+    },
+    log: function(...args) {
+        logItems.push(args[0]);
+    }
+}
+
+var _checkLog = function(startsWith, position = 0) {
+    if (logItems.length === 0) return false;
+    const result = logItems[logItems.length - 1].startsWith(startsWith, position);
+    if (result === false) {
+        console.log(`The '${logItems[logItems.length - 1]}' not starts with '${startsWith}' in position ${position}.`);
+    }
+    return result;
+}
+
 var _CreateMockSessionStore = function(opts) {
     opts = opts || { debug: true };
+    opts.logger = loggerForTest;
     if (util.isNullOrUndefined(opts.socket)) {
         opts.socket = new ConsulMock();
     }
@@ -22,7 +54,7 @@ var _CreateMockSessionStore = function(opts) {
 
 var consulMock = new ConsulMock();
 var sessionStore = _CreateMockSessionStore({
-    debug: true,
+    debug: true,    
     socket: consulMock,
 });
 
@@ -67,6 +99,49 @@ describe('The module interface declaration test', function() {
             expect(sessionStore).to.have.property('trace');
             expect(sessionStore).to.have.property('log');
         });
+
+        it('check validation the logger object', function() {
+
+            const _logger = { };
+            let opts = { logger: _logger };
+
+            let ss = new ConsulSessionStore(opts);
+
+            expect(ss.debug('foo')).to.be.false;
+            expect(ss.info('foo')).to.be.false;
+            expect(ss.warn('foo')).to.be.false;
+            expect(ss.error('foo')).to.be.false;
+            expect(ss.trace('foo')).to.be.false;
+            expect(ss.log('foo')).to.be.false;
+
+            _logger.debug = function(...args) { expect(args[0]).equal('foo'); };
+
+            opts = { logger: _logger };
+            ss = new ConsulSessionStore(opts);
+
+            expect(ss.debug('foo')).to.be.false;
+            expect(ss.info('foo')).to.be.false;
+            expect(ss.warn('foo')).to.be.false;
+            expect(ss.error('foo')).to.be.false;
+            expect(ss.trace('foo')).to.be.false;
+            expect(ss.log('foo')).to.be.false;
+
+            _logger.info = function(...args) { if (args[0] !== 'Logger object setup completed successfully.') expect(args[0]).equal('foo'); };
+            _logger.warn = function(...args) { expect(args[0]).equal('foo'); };
+            _logger.error = function(...args) { expect(args[0]).equal('foo'); };
+            _logger.trace = function(...args) { expect(args[0]).equal('foo'); };
+            _logger.log = function(...args) { expect(args[0]).equal('foo'); };
+
+            opts = { logger: _logger };
+            ss = new ConsulSessionStore(opts);
+
+            expect(ss.debug('foo')).to.be.true;
+            expect(ss.info('foo')).to.be.true;
+            expect(ss.warn('foo')).to.be.true;
+            expect(ss.error('foo')).to.be.true;
+            expect(ss.trace('foo')).to.be.true;
+            expect(ss.log('foo')).to.be.true;
+        });
     });
 });
 
@@ -74,7 +149,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
     var 
         exceptAsync = async function(promise) {
             try {
-                const res = await promise;
+                const res = await promise;                
                 if (res.err !== null) {
                     return expect(res.err.message);
                 }
@@ -110,15 +185,15 @@ describe('Properties execution tests for the SessionStore object.', function() {
             });
             return result;
         },
-        destroyAsync = async function(key) {
+        destroyAsync = async function(key, ss = sessionStore) {
             var result = await baseAsync(function(cb) {
-                sessionStore.destroy(key, cb);
+                ss.destroy(key, cb);
             });
             return result;
         }, 
-        touchAsync = async function(key, sess) {
+        touchAsync = async function(key, sess, ss = sessionStore) {
             var result = await baseAsync(function(cb) {
-                sessionStore.touch(key, sess, cb);
+                ss.touch(key, sess, cb);
             });
             return result;
         };
@@ -136,6 +211,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
             expect(asyncResult.err).to.be.null;
             expect(asyncResult.data).to.be.null;
             expect(asyncResult.lockSessionId).to.be.undefined;
+            expect(_checkLog(`[X] The session sessions/connect.sid/${ConsulMock.KeyNotExists} not exists`)).to.be.true;
         });
         it('get by key ' + ConsulMock.KeyExists + ', this key exists in KV Store.', async function() {
             var asyncResult = await getAsync(ConsulMock.KeyExists);            
@@ -144,6 +220,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
             expect(asyncResult.lockSessionId).to.not.be.null;
             expect(asyncResult.lockSessionId).equal(ConsulMock.LockSessionKeyByDefault);
             expect(asyncResult.data.cookie).to.not.be.null.and.not.be.undefined;
+            expect(_checkLog(`[V] The session sessions/connect.sid/${ConsulMock.KeyExists} exists`)).to.be.true;
             expect(JSON.stringify(asyncResult.data.cookie)).equal(JSON.stringify(ConsulMock.SessAsDefault.cookie));
         });   
         it('get by key ' + ConsulMock.KeyCritical + ', this operation causes an critical error.', async function() {
@@ -164,6 +241,7 @@ describe('Properties execution tests for the SessionStore object.', function() {
             expect(asyncResult.lockSessionId).to.not.be.null;
             expect(asyncResult.lockSessionId).equal(ConsulMock.LockSessionKeyByDefault);
             expect(asyncResult.data.cookie).to.not.be.null.and.not.be.undefined;
+            expect(_checkLog(`[V] The session sessions/connect.sid/${ConsulMock.KeyExists} exists`)).to.be.true;
             expect(JSON.stringify(asyncResult.data.cookie)).equal(JSON.stringify(ConsulMock.SessAsDefault.cookie));
         }); 
 
@@ -175,7 +253,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
                 serializer: mockSerializer,
             });
 
-            (await exceptAsync(getAsync(ConsulMock.KeyExists, _sessionStore))).equal(SerializerMock.TestErrorMessage);    
+            (await exceptAsync(getAsync(ConsulMock.KeyExists, _sessionStore))).equal(SerializerMock.TestErrorMessage);
+            expect(_checkLog(`[X] Deserialization value failed, the session sessions/connect.sid/${ConsulMock.KeyExists}`)).to.be.true;
         }); 
     });
     
@@ -186,14 +265,24 @@ describe('Properties execution tests for the SessionStore object.', function() {
             expect(asyncResult.data).to.be.null;
             // expect(asyncResult.lockSessionId).to.be.undefined;
             expect(asyncResult.err).equal(ConsulMock.TestErrorMessage);
+            expect(_checkLog(`[X] Session sessions/connect.sid/${ConsulMock.KeyError}, get by key on set is failed`)).to.be.true;
         });
         it('set new key ' + ConsulMock.KeyNotExists + ', this operation should be successful', async function() {
             var asyncResult = await setAsync(ConsulMock.KeyNotExists, ConsulMock.SessAsDefault);            
-            expect(asyncResult.err).to.be.null;            
+            expect(asyncResult.err).to.be.null;
+            expect(_checkLog(`[V] New session sessions/connect.sid/${ConsulMock.KeyNotExists}`)).to.be.true;         
         });
         it('update key ' + ConsulMock.KeyExists + ', this operation should be successful', async function() {
             var asyncResult = await setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault);            
             expect(asyncResult.err).to.be.null;
+            expect(_checkLog(`[V] Session sessions/connect.sid/${ConsulMock.KeyExists} updated`)).to.be.true;
+        });
+        it('set key ' + ConsulMock.KeyLockSessionIsNull + ', lock session is null.', async function() {
+            var asyncResult = await setAsync(ConsulMock.KeyLockSessionIsNull, ConsulMock.SessAsDefault);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.not.be.null;
+            expect(asyncResult.err.message).equal('The session data not have a lock session ID');
+            expect(_checkLog(`[V] The session sessions/connect.sid/${ConsulMock.KeyLockSessionIsNull} exists`)).to.be.true;
         });
         it('set key ' + ConsulMock.KeyCritical + ', this operation causes an critical error.', async function() {
             (await exceptAsync(setAsync(ConsulMock.KeyCritical, ConsulMock.SessAsDefault))).equal(ConsulMock.TestErrorMessage);                        
@@ -233,6 +322,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
             expect(mockResSess.name).equal(sessName);
             expect(mockResSess.ttl).to.be.null;
             expect(mockResSess.behavior).equal("delete");
+
+            expect(_checkLog(`[V] New session sessions:connect.sid:${ConsulMock.KeyNotExists}`)).to.be.true;
         });
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value succesful.', async function() {
             const mockSerializer = new SerializerMock();
@@ -245,6 +336,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
 
             var asyncResult = await setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore);            
             expect(asyncResult.err).to.be.null;
+
+            expect(_checkLog(`[V] Session sessions/connect.sid/${ConsulMock.KeyExists} updated`)).to.be.true;
         });
         it('(serializer test) set key ' + ConsulMock.KeyExists + ', serialize of value causes an error.', async function() {
             const mockSerializer = new SerializerMock();
@@ -255,7 +348,9 @@ describe('Properties execution tests for the SessionStore object.', function() {
                 serializer: mockSerializer,
             });
 
-            (await exceptAsync(setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore))).equal(SerializerMock.TestErrorMessage);    
+            (await exceptAsync(setAsync(ConsulMock.KeyExists, ConsulMock.SessAsDefault, _sessionStore))).equal(SerializerMock.TestErrorMessage);
+            
+            expect(_checkLog(`[X] Serialization value failed, the session sessions/connect.sid/${ConsulMock.KeyExists}`)).to.be.true;
         }); 
     });
 
@@ -276,6 +371,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).equal(sess.cookie.maxAge / 1000 + 's');
             expect(mockResSess.behavior).equal("delete");
+
+            expect(_checkLog(`[V] New session sessions/connect.sid/${ConsulMock.KeyNotExists}`)).to.be.true;
         });        
         it('set new key ' + ConsulMock.KeyNotExists + ' with cookie.maxAge value (set "release" behavior), this operation should be successful', async function() {
             const mock = new ConsulMock();
@@ -300,6 +397,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).equal(sess.cookie.maxAge / 1000 + 's');
             expect(mockResSess.behavior).equal("release");
+
+            expect(_checkLog(`[V] New session sessions/connect.sid/${ConsulMock.KeyNotExists}`)).to.be.true;
         });
         it('set new key ' + ConsulMock.KeyNotExists + ', cookie.maxAge has null value.', async function() {
             var mockKVRes = consulMock.kv.res;
@@ -317,6 +416,8 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).to.be.null;
             expect(mockResSess.behavior).equal("delete");
+
+            expect(_checkLog(`[V] New session sessions/connect.sid/${ConsulMock.KeyNotExists}`)).to.be.true;
         });
         it('set new key ' + ConsulMock.KeyNotExists + ', cookie.maxAge has undefined value.', async function() {
             var mockKVRes = consulMock.kv.res;
@@ -334,56 +435,105 @@ describe('Properties execution tests for the SessionStore object.', function() {
             var mockResSess = mockSessRes[`connect.sid:${ConsulMock.KeyNotExists}`];
             expect(mockResSess.ttl).to.be.null;
             expect(mockResSess.behavior).equal("delete");
+
+            expect(_checkLog(`[V] New session sessions/connect.sid/${ConsulMock.KeyNotExists}`)).to.be.true;
         });
     });
     
     describe('DESTROY', function() {
-        it('without connection to consul', async function() {
-            var asyncResult = await destroyAsync(key);
-            checkErrorFunc(asyncResult.err);
-
-            console.log('DESTROY result.data: ' + JSON.stringify(asyncResult.data))
-
-            // TODO: ...
+        it('key ' + ConsulMock.KeyNotExists + ' is not exists.', async function() {
+            var asyncResult = await destroyAsync(ConsulMock.KeyNotExists);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog('[X] Session id not-exists not exists')).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyExists + ' is exists.', async function() {
+            var asyncResult = await destroyAsync(ConsulMock.KeyExists);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog(`[V] Session sessions/connect.sid/${ConsulMock.KeyExists} destroyed`)).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyLockSessionIsNull + ', lock session is null.', async function() {
+            var asyncResult = await destroyAsync(ConsulMock.KeyLockSessionIsNull);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog('[X] Missing lockSessionID value for session')).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyError + ', this operation should returned an error message.', async function() {
+            var asyncResult = await destroyAsync(ConsulMock.KeyError);            
+            expect(asyncResult.err).to.not.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(asyncResult.lockSessionId).to.be.undefined;
+            expect(asyncResult.err).equal(ConsulMock.TestErrorMessage);
+            expect(_checkLog(`[X] Session sessions/connect.sid/${ConsulMock.KeyError}`)).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyCritical + ', this operation causes an critical error.', async function() {
+            (await exceptAsync(destroyAsync(ConsulMock.KeyCritical))).equal(ConsulMock.TestErrorMessage)
         });
     });
 
-    /*
     describe('TOUCH', function() {
-        it('without connection to consul', async function() {
-            var asyncResult = await touchAsync(key, Consul.SessAsDefault);
-            checkErrorFunc(asyncResult.err);
-
-            console.log('TOUCH result.data: ' + JSON.stringify(asyncResult.data))
-
-            // TODO: ...
+        it('key ' + ConsulMock.KeyNotExists + ' is not exists.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            var asyncResult = await touchAsync(ConsulMock.KeyNotExists, sess);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog('[X] Missing sessionData value')).to.be.true;
         });
-    });
-    */
-});
+        it('key ' + ConsulMock.KeyExists + ' is exists.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            var asyncResult = await touchAsync(ConsulMock.KeyExists, sess);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog(`[V] Session sessions/connect.sid/${ConsulMock.KeyExists} touched`)).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyLockSessionIsNull + ', lock session is null.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            var asyncResult = await touchAsync(ConsulMock.KeyLockSessionIsNull, sess);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog('[X] Missing lockSessionID value')).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyExists + ', cookie.maxAge is null or undefined.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            
+            sess.cookie.maxAge = null;
+            var asyncResult = await touchAsync(ConsulMock.KeyExists, sess);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog('[X] Refresh the time-to-live')).to.be.true;
 
-/*
-describe('The logger and its methods test', function() {
-    
-    describe('DEBUG with opts.debug is true', function() {
-        // TODO: ...
-    });
-    describe('DEBUG with opts.debug is false', function() {
-        // TODO: ...
-    });
-    describe('INGO', function() {
-        // TODO: ...
-    });
-    describe('WARN', function() {
-        // TODO: ...
-    });
-    describe('ERROR', function() {
-        // TODO: ...
-    }); 
-    describe('TRACE', function() {
-        // TODO: ...
-    }); 
-    describe('LOG', function() {
-        // TODO: ...
-    }); 
-}); */
+            sess.cookie.maxAge = undefined;
+            var asyncResult = await touchAsync(ConsulMock.KeyExists, sess);
+            expect(asyncResult).to.not.be.null.and.not.be.undefined;
+            expect(asyncResult.err).to.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(_checkLog(`[V] Session sessions/connect.sid/${ConsulMock.KeyExists} touched`)).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyError + ', this operation should returned an error message.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            var asyncResult = await touchAsync(ConsulMock.KeyError, sess);            
+            expect(asyncResult.err).to.not.be.null;
+            expect(asyncResult.data).to.be.null;
+            expect(asyncResult.lockSessionId).to.be.undefined;
+            expect(asyncResult.err).equal(ConsulMock.TestErrorMessage);
+            expect(_checkLog(`[X] Session sessions/connect.sid/${ConsulMock.KeyError}`)).to.be.true;
+        });
+        it('key ' + ConsulMock.KeyCritical + ', this operation causes an critical error.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            (await exceptAsync(touchAsync(ConsulMock.KeyCritical, sess))).equal(ConsulMock.TestErrorMessage);
+        });
+        it('key ' + ConsulMock.KeyTouchRenewFailed + ', this operation should returned an error message.', async function() {
+            var sess = { cookie: Object.assign({ }, ConsulMock.SessAsDefault.cookie) };
+            (await exceptAsync(touchAsync(ConsulMock.KeyTouchRenewFailed, sess))).equal(
+                `Resulted renew[0].ID (${ConsulMock.LockSessionKeyUnknown}) and lockSessionID (${ConsulMock.LockSessionKeyOfTouchRenewFailed}) are not equal.`);
+        });
+    });    
+});

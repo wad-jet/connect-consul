@@ -42,6 +42,30 @@ module.exports = function (session) {
 
     const _nil = function(err, args) { };
 
+    const _loggerTest = function(logger) {
+        if (util.isNullOrUndefined(logger)) return false;
+        let result = true;
+        if(util.isNullOrUndefined(logger.debug) || typeof logger.debug !== 'function') {
+            debug('[!] Logger not implemented the debug method.'); result = false;
+        }
+        if(util.isNullOrUndefined(logger.info) || typeof logger.info !== 'function') {
+            debug('[!] Logger not implemented the info method.'); result = false;
+        }
+        if(util.isNullOrUndefined(logger.warn) || typeof logger.warn !== 'function') {
+            debug('[!] Logger not implemented the warn method.'); result = false;
+        }
+        if(util.isNullOrUndefined(logger.error) || typeof logger.error !== 'function') {
+            debug('[!] Logger not implemented the error method.'); result = false;
+        }
+        if(util.isNullOrUndefined(logger.trace) || typeof logger.trace !== 'function') {
+            debug('[!] Logger not implemented the trace method.'); result = false;
+        }
+        if(util.isNullOrUndefined(logger.log) || typeof logger.log !== 'function') {
+            debug('[!] Logger not implemented the log method.'); result = false;
+        }
+        return result;
+    };
+
     const _getSessionKey = function(id, self) {
         if (util.isNullOrUndefined(id)) {
             //TODO: TEST ...
@@ -64,7 +88,7 @@ module.exports = function (session) {
         self._consul.kv.get(sessionKey, function(err, item) {
             if (!util.isNullOrUndefined(err)) return cb(err);
             if (util.isNullOrUndefined(item)) {
-                self.debug(`[V] The session ${sessionKey} not exists.`);
+                self.debug(`[X] The session ${sessionKey} not exists.`);
                 return cb();
             }
             try {
@@ -119,6 +143,15 @@ module.exports = function (session) {
         opts = opts || {};
         this._separator = opts.separator || '/';
 
+        this._logger = opts.logger || null;
+        if (_loggerTest(this._logger) === true) {
+            this.info('Logger object setup completed successfully.');
+        } else {
+            this.warn('Logger is failed.');
+            this._logger = null;
+        }
+        delete opts.logger;
+
         store.call(this, opts);        
 
         this._app = (!util.isNullOrUndefined(opts.application) ? opts.application : 'connect') + '.sid';
@@ -145,10 +178,7 @@ module.exports = function (session) {
 
         if (!util.isNullOrUndefined(opts.log) && typeof opts.log !== 'function') {
             throw new TypeError('The options.log not a function.');
-        }
-
-        this._logger = opts.logger || null;
-        delete opts.logger;
+        }       
 
         this._sessionBehavior = opts.sessionBehavior === 'release' ? opts.sessionBehavior : 'delete';
         delete opts.sessionBehavior;
@@ -156,7 +186,7 @@ module.exports = function (session) {
         debug.enabled = opts.debug;
         delete opts.debug;
 
-        //TODO: TEST ... Need testes set options values after created a new object with default and opts settings values !!!
+        //TODO: TEST ... Need testes set options values after created a new object with default and opts settings values.
     }
 
     util.inherits(ConsulSessionStore, session.Store);    
@@ -190,14 +220,12 @@ module.exports = function (session) {
         const sessionKey = _getSessionKey(id, self);
         __get(sessionKey, function(err, prevData, lockSessionID) {
             if (!util.isNullOrUndefined(err)) {
+                self.warn(`[X] Session ${sessionKey}, get by key on set is failed, lockSessionID: ${lockSessionID}. The err has value: ${JSON.stringify(err)}`);
                 return cb(err);
             }
-            const sessionKey = _getSessionKey(id, self);             
-
             if (!util.isNullOrUndefined(prevData)) {     
                 if (util.isNullOrUndefined(lockSessionID)) {
-                    //TODO: TEST
-                    throw new Error('The session data not have a lock session ID');
+                    return cb(new Error('The session data not have a lock session ID'));
                 }
                 self.debug(`[.] Update session ${sessionKey}, lockSessionID: ${lockSessionID}.`);    
                 __set(lockSessionID, sessionKey, data, function(err) {
@@ -205,7 +233,6 @@ module.exports = function (session) {
                     cb(err);
                 }, self);
             } else {
-                //TODO: TEST - _getTTL !!!
                 const ttl = _getTTL(data);
                 self.debug(`[.] Create new session ${sessionKey}.`);
                 self._consul.session.create({
@@ -237,24 +264,22 @@ module.exports = function (session) {
         self.debug(`[.] Destroy session ${sessionKey}.`);
         __get(sessionKey, function(err, sessionData, lockSessionID) {        
             if (!util.isNullOrUndefined(err)) {
+                self.warn(`[X] Session ${sessionKey}, get by key on destroy is failed, lockSessionID: ${lockSessionID}. The err has value: ${JSON.stringify(err)}`);
                 return cb(err);
             }
             if (util.isNullOrUndefined(sessionData)) {
-                //TODO: TEST
-                debug(`[X] Session id ${id} not exists.`);
+                self.debug(`[X] Session id ${id} not exists.`);
                 return cb();
             }
             if (util.isNullOrUndefined(lockSessionID)) {
-                //TODO: TEST
-                warn(`[X] Missing lockSessionID value for session id ${id}.`)
+                self.warn(`[X] Missing lockSessionID value for session id ${id}.`)
                 return cb();
             }
             self._consul.session.destroy(lockSessionID, function(err) {
-                //TODO: TEST
                 if (!err) self.debug(`[V] Session ${sessionKey} destroyed, lockSessionID: ${lockSessionID}.`);
                 cb(err);
             });            
-        }, true);
+        }, self);
     }
 
     /**
@@ -272,40 +297,40 @@ module.exports = function (session) {
         const sessionKey = _getSessionKey(id, self); cb = cb || _nil;
         self.debug(`[.] Touch session ${sessionKey}.`);
         if (!util.isNullOrUndefined(data) && data.cookie.maxAge === null) {
-            //TODO: TEST
             self.debug(`[X] Refresh the time-to-live for the session ${sessionKey} is ignored becouse cookie.maxAge not set and the session does not expire.`);
             return cb();
         }        
         __get(sessionKey, function(err, sessionData, lockSessionID) {        
             if (!util.isNullOrUndefined(err)) {
+                self.warn(`[X] Session ${sessionKey}, get by key on touch is failed, lockSessionID: ${lockSessionID}. The err has value: ${JSON.stringify(err)}`);
                 return cb(err);
             }
             if (util.isNullOrUndefined(sessionData)) {
-                //TODO: TEST
+                self.debug(`[X] Missing sessionData value for session id ${id}.`);
                 return cb();
             }
             if (util.isNullOrUndefined(lockSessionID)) {
-                //TODO: TEST
-                warn(`[X] Missing lockSessionID value for session id ${id}.`)
+                self.warn(`[X] Missing lockSessionID value for session id ${id}.`)
                 return cb();
             }            
             self._consul.session.renew(lockSessionID, function(err, renew) {
                 if (lockSessionID !== renew[0].ID) {
-                    //TODO: TEST
                     throw Error('Resulted renew[0].ID (' + renew[0].ID + ') and lockSessionID (' + lockSessionID + ') are not equal.');
                 }
-                //TODO: TEST
-                if (!err) self.debug(`[V] Session ${sessionKey} touched, lockSessionID: ${renew[0].ID}.`);
+                if (!err) 
+                    self.debug(`[V] Session ${sessionKey} touched, lockSessionID: ${renew[0].ID}.`);
+                else //TODO: TEST
+                    self.warn(`[X] Session ${sessionKey} touch is failed, lockSessionID: ${lockSessionID}.`);
                 cb(err);
             });                    
-        }, true);
+        }, self);
     }
 
     ConsulSessionStore.prototype.debug = function(...args) {
-        debug(...args);        
+        debug(...args);    
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.debug)) {
-            this._logger.debug(...args);
-        }
+            this._logger.debug(...args); return true;
+        } else return false;
     }
 
     ConsulSessionStore.prototype.info = function(...args) {
@@ -315,8 +340,8 @@ module.exports = function (session) {
             debug(...args); 
         }
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.info)) {
-            this._logger.info(...args);
-        }
+            this._logger.info(...args); return true;
+        } else return false;
     }
 
     ConsulSessionStore.prototype.warn = function(...args) {
@@ -326,8 +351,8 @@ module.exports = function (session) {
             debug(...args); 
         }
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.warn)) {
-            this._logger.warn(...args);
-        }
+            this._logger.warn(...args); return true;
+        } else return false;
     }
 
     ConsulSessionStore.prototype.error = function(...args) {
@@ -337,22 +362,22 @@ module.exports = function (session) {
             debug(...args); 
         }
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.error)) {
-            this._logger.error(...args);
-        }
+            this._logger.error(...args); return true;
+        } else return false;
     }
 
     ConsulSessionStore.prototype.trace = function(...args) {
         debug(...args);
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.trace)) {
-            this._logger.trace(...args);
-        }
+            this._logger.trace(...args); return true;
+        } else return false;
     }
 
     ConsulSessionStore.prototype.log = function(...args) {
         debug(...args);
         if (this._logger !== null && !util.isNullOrUndefined(this._logger.log)) {
-            this._logger.log(...args);
-        }
+            this._logger.log(...args); return true;
+        } else return false;
     }
 
     return ConsulSessionStore;

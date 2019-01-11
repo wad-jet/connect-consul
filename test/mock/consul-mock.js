@@ -10,6 +10,9 @@ const keyPrefix = 'sessions/connect.sid/';
 // '{"cookie":{"originalMaxAge":null,"expires":null,"httpOnly":true,"path":"/"},"counter":0}'
 
 Consul.LockSessionKeyByDefault = 'lock-session-default-key';
+Consul.LockSessionKeyUnknown = 'lock-session-unknown-key';
+Consul.LockSessionKeyOfTouchRenewFailed = 'lock-session-key-touch-renew-failed';
+
 Consul.SessAsDefault = {
     cookie: {
         originalMaxAge: null,
@@ -22,8 +25,13 @@ Consul.SessAsDefault = {
 Consul.KeyNotExists = 'not-exists';
 Consul.KeyExists = 'exists';
 Consul.KeyError = 'error';
+Consul.KeyLockSessionIsNull = 'lock-session-is-null';
 Consul.KeyCritical = 'critical-error';
+Consul.KeyTouchRenewFailed = 'touch-renew-failed';
+Consul.KeyTouchRenewLockSessionIncorrect = 'touch-renew-lock-session-incorrect';
+
 Consul.TestErrorMessage = 'error for tests';
+Consul.TestErrorMessageOfTouchRenew = 'error touch renew for tests';
 
 var getPrefix = function(separator) {
     if (separator === null || separator === undefined) {
@@ -38,7 +46,6 @@ var getPrefix = function(separator) {
 
 var getKvItem = function(lockSessionKey, sess) {
     return {
-        // TODO: другие поля ??
         Session: !!sess ? lockSessionKey : null,
         Value: JSON.stringify(sess),
     }
@@ -49,7 +56,6 @@ Consul.prototype.kv = {
     res: { },
     separator: '/',
     get: function(opts, callback) {
-        //console.log(`MOCK GET> ${JSON.stringify(opts)}, separator: ${this.separator}`);
         var err = null;  
         var key = ((opts instanceof Object) ? opts.key : opts);
         var result = null;
@@ -57,25 +63,32 @@ Consul.prototype.kv = {
         var keyPrefixVal = getPrefix(this.separator);
 
         switch(key){
-            case (keyPrefixVal + Consul.KeyNotExists):
-                {
-                    result = null; //getKvItem(Consul.LockSessionKeyByDefault, null);
-                    break;
-                }
-            case (keyPrefixVal + Consul.KeyExists):
-                {
-                    result = getKvItem(Consul.LockSessionKeyByDefault, Consul.SessAsDefault);
-                    break;
-                }
-            case (keyPrefixVal + Consul.KeyError):
-                {
-                    err = Consul.TestErrorMessage;
-                    break;
-                }
-            case (keyPrefixVal + Consul.KeyCritical):
-                {
-                    throw new Error(Consul.TestErrorMessage);
-                }
+            case (keyPrefixVal + Consul.KeyNotExists): {
+                result = null; //getKvItem(Consul.LockSessionKeyByDefault, null);
+                break;
+            }
+            case (keyPrefixVal + Consul.KeyExists): {
+                result = getKvItem(Consul.LockSessionKeyByDefault, Consul.SessAsDefault);
+                break;
+            }
+            case (keyPrefixVal + Consul.KeyTouchRenewFailed): {
+                result = getKvItem(Consul.LockSessionKeyOfTouchRenewFailed, Consul.SessAsDefault);
+                break;
+            }
+            case (keyPrefixVal + Consul.KeyLockSessionIsNull): {
+                result = getKvItem(null, Consul.SessAsDefault);
+                break;
+            }
+            case (keyPrefixVal + Consul.KeyError): {
+                err = Consul.TestErrorMessage;
+                break;
+            }
+            case (keyPrefixVal + Consul.KeyCritical): {
+                throw new Error(Consul.TestErrorMessage);
+            }            
+            case (keyPrefixVal + Consul.KeyCritical): {
+                throw new Error(Consul.TestErrorMessage);
+            }
             default:
                 throw new Error('Unknown test key: ' + key + ', keyPrefixVal: ' + keyPrefixVal)
         }              
@@ -88,7 +101,6 @@ Consul.prototype.kv = {
 
         var keyPrefixVal = getPrefix(this.separator);
 
-        //console.log(`MOCK SET> ${key} ${value} ${JSON.stringify(opts)} keyPrefixVal ${keyPrefixVal}`);
         switch(key){
             case (keyPrefixVal + Consul.KeyNotExists):
                 {                    
@@ -113,7 +125,6 @@ Consul.prototype.session = {
     res: { },
     create: function (opts, callback) {
         var err = null;
-        //console.log(`CREATE SESS> ${JSON.stringify(opts)}`);
         this.res[opts.name] = opts;
         callback(err, { ID: Consul.LockSessionKeyByDefault })
     },
@@ -122,10 +133,26 @@ Consul.prototype.session = {
         callback(err);
     },
     renew: function (ID, callback) {
-        var err = null;        
-        callback(err, [
-            { ID: Consul.LockSessionKeyByDefault }
-        ]);
+        var err = null;  
+        var result = null;
+        switch(ID){            
+            case Consul.LockSessionKeyOfTouchRenewFailed: {
+                err = new Error(Consul.TestErrorMessageOfTouchRenew);
+                result = [
+                    { ID: Consul.LockSessionKeyUnknown }
+                ];
+                break;
+            }
+            case Consul.LockSessionKeyByDefault: {
+                result = [
+                    { ID: Consul.LockSessionKeyByDefault }
+                ];
+                break;
+            }
+            default:
+                throw new Error('Unknown test ID: ' + ID);
+        }              
+        callback(err, result);
     }
 }
 
